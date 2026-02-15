@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/kube-rca/backend/compare/0.3.0...0.4.0) (2026-02-15)
+
+
+### Features
+
+* 라벨 기반 검색을 위해 목록 반환시 라벨 추가(KAN-143) ([7bdeb97](https://github.com/kube-rca/backend/commit/7bdeb979fd63aaa17eb6c67dc4ff3e0e43def080))
+
+
+### Bug Fixes
+
+* route backend image pushes to component repository ([b0274da](https://github.com/kube-rca/backend/commit/b0274da089e1f99e40d80965a82ea2454fe686bd))
+
 ## [0.3.0](https://github.com/kube-rca/backend/compare/0.2.0...0.3.0) (2026-02-01)
 
 
