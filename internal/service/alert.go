@@ -29,14 +29,16 @@ type AlertService struct {
 	slackClient  *client.SlackClient
 	agentService *AgentService
 	db           *db.Postgres
+	deliverySvc  *WebhookDeliveryService
 }
 
 // AlertService 객체 생성
-func NewAlertService(slackClient *client.SlackClient, agentService *AgentService, database *db.Postgres) *AlertService {
+func NewAlertService(slackClient *client.SlackClient, agentService *AgentService, database *db.Postgres, deliverySvc *WebhookDeliveryService) *AlertService {
 	return &AlertService{
 		slackClient:  slackClient,
 		agentService: agentService,
 		db:           database,
+		deliverySvc:  deliverySvc,
 	}
 }
 
@@ -107,10 +109,15 @@ func (s *AlertService) ProcessWebhook(webhook model.AlertmanagerWebhook) (sent, 
 			}
 		}
 
-		// 8. Agent에 비동기 분석 요청 (firing, resolved)
+		// 8. Agent에 비동기 실행 요청 (firing, resolved)
 		// DB에서 thread_ts 조회 (메모리 대신 DB 사용)
 		threadTS, _ := s.db.GetAlertThreadTS(alert.Fingerprint)
 		go s.agentService.RequestAnalysis(alert, threadTS, incidentID)
+
+		// 9. 사용자 설정 Webhook으로 비동기 전송 (기존 Slack과 시동)
+		if s.deliverySvc != nil {
+			go s.deliverySvc.Deliver(alert, incidentID)
+		}
 	}
 	return sent, failed
 }
