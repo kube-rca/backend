@@ -3,15 +3,26 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/kube-rca/backend/internal/model"
 	tmpl "github.com/kube-rca/backend/internal/template"
 )
 
-var _ = context.Background // context 패키지 사용 유지 (GetWebhookConfigs에서 사용)
+type webhookType string
+
+const (
+	webhookTypeSlack webhookType = "slack"
+	webhookTypeTeams webhookType = "teams"
+	webhookTypeHTTP  webhookType = "http"
+
+	webhookTypeHeader = "X-Webhook-Type"
+)
 
 // webhookConfigReader - DB 인터페이스 (delivery 전용)
 type webhookConfigReader interface {
@@ -46,17 +57,17 @@ func NewWebhookDeliveryService(configDB webhookConfigReader, incidentDB incident
 //
 // 기존 Slack 전송과 독립적으로 동작합니다.
 // 개별 config 실패 시 로그만 남기고 나머지는 계속 전송합니다.
-func (s *WebhookDeliveryService) Deliver(alert model.Alert, incidentID string) {
+func (s *WebhookDeliveryService) Deliver(alert model.Alert, incidentID string) error {
 	ctx := context.Background()
 
 	// 1. 저장된 webhook configs 조회
 	configs, err := s.configDB.GetWebhookConfigs(ctx)
 	if err != nil {
 		log.Printf("[WebhookDelivery] Failed to load webhook configs: %v", err)
-		return
+		return err
 	}
 	if len(configs) == 0 {
-		return
+		return nil
 	}
 
 	// 2. Incident 상세 조회 (템플릿에 주입 – 실패해도 nil로 진행)
@@ -75,25 +86,38 @@ func (s *WebhookDeliveryService) Deliver(alert model.Alert, incidentID string) {
 	alertData := tmpl.AlertDataFromModel(alert)
 
 	// 3. 각 config에 대해 렌더링 후 HTTP 전송
+	deliveryErrors := make([]error, 0)
 	for _, cfg := range configs {
 		if cfg.URL == "" {
 			log.Printf("[WebhookDelivery] Skipping config id=%d: URL is empty", cfg.ID)
 			continue
 		}
 
-		rendered := tmpl.RenderBody(cfg.Body, incidentData, &alertData)
+		bodyTemplate := resolveBodyTemplate(cfg)
+		rendered := tmpl.RenderBody(bodyTemplate, incidentData, &alertData)
 
 		if err := s.sendHTTP(cfg, rendered); err != nil {
 			log.Printf("[WebhookDelivery] Failed to deliver to %s (config id=%d): %v", cfg.URL, cfg.ID, err)
+			deliveryErrors = append(deliveryErrors, fmt.Errorf("config id=%d: %w", cfg.ID, err))
 		} else {
 			log.Printf("[WebhookDelivery] Delivered to %s (config id=%d)", cfg.URL, cfg.ID)
 		}
 	}
+
+	if len(deliveryErrors) > 0 {
+		return errors.Join(deliveryErrors...)
+	}
+	return nil
 }
 
 // sendHTTP - 단일 webhook config로 HTTP 요청 전송
 func (s *WebhookDeliveryService) sendHTTP(cfg model.WebhookConfig, body string) error {
-	req, err := http.NewRequest(cfg.Method, cfg.URL, bytes.NewBufferString(body))
+	method := strings.TrimSpace(cfg.Method)
+	if method == "" {
+		method = http.MethodPost
+	}
+
+	req, err := http.NewRequest(method, cfg.URL, bytes.NewBufferString(body))
 	if err != nil {
 		return err
 	}
@@ -101,10 +125,18 @@ func (s *WebhookDeliveryService) sendHTTP(cfg model.WebhookConfig, body string) 
 	// Content-Type 기본값 설정 (없으면 application/json)
 	hasContentType := false
 	for _, h := range cfg.Headers {
-		if h.Key != "" {
-			req.Header.Set(h.Key, h.Value)
+		key := strings.TrimSpace(h.Key)
+		if key == "" {
+			continue
 		}
-		if http.CanonicalHeaderKey(h.Key) == "Content-Type" {
+
+		// 내부 관리용 메타데이터 헤더는 외부 webhook으로 전송하지 않는다.
+		if strings.EqualFold(key, webhookTypeHeader) {
+			continue
+		}
+
+		req.Header.Set(key, h.Value)
+		if http.CanonicalHeaderKey(key) == "Content-Type" {
 			hasContentType = true
 		}
 	}
@@ -119,7 +151,81 @@ func (s *WebhookDeliveryService) sendHTTP(cfg model.WebhookConfig, body string) 
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return http.ErrNotSupported // reuse sentinel; actual code logged above
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 	return nil
+}
+
+func resolveBodyTemplate(cfg model.WebhookConfig) string {
+	if t, ok := webhookTypeFromHeaders(cfg.Headers); ok {
+		return defaultTemplateByType(t)
+	}
+
+	// 구버전 데이터 호환: 타입 헤더가 없고 body가 채워져 있으면 기존 body를 그대로 사용
+	if strings.TrimSpace(cfg.Body) != "" {
+		return cfg.Body
+	}
+
+	return defaultTemplateByType(webhookTypeHTTP)
+}
+
+func webhookTypeFromHeaders(headers []model.WebhookHeader) (webhookType, bool) {
+	for _, h := range headers {
+		if !strings.EqualFold(strings.TrimSpace(h.Key), webhookTypeHeader) {
+			continue
+		}
+
+		switch strings.ToLower(strings.TrimSpace(h.Value)) {
+		case string(webhookTypeSlack):
+			return webhookTypeSlack, true
+		case string(webhookTypeTeams):
+			return webhookTypeTeams, true
+		case string(webhookTypeHTTP):
+			return webhookTypeHTTP, true
+		default:
+			return webhookTypeHTTP, true
+		}
+	}
+
+	return "", false
+}
+
+func defaultTemplateByType(t webhookType) string {
+	switch t {
+	case webhookTypeSlack:
+		return `{
+  "text": "[{{alert.status}}] {{alert.alertname}} ({{alert.severity}})\n{{incident.title}}\n{{alert.summary}}"
+}`
+	case webhookTypeTeams:
+		return `{
+  "@type": "MessageCard",
+  "@context": "https://schema.org/extensions",
+  "summary": "{{incident.title}}",
+  "themeColor": "0076D7",
+  "title": "[{{alert.status}}] {{alert.alertname}}",
+  "text": "{{alert.summary}}"
+}`
+	default:
+		return `{
+  "incident": {
+    "id": "{{incident.id}}",
+    "title": "{{incident.title}}",
+    "severity": "{{incident.severity}}",
+    "status": "{{incident.status}}",
+    "created_at": "{{incident.created_at}}",
+    "summary": "{{incident.summary}}"
+  },
+  "alert": {
+    "alertname": "{{alert.alertname}}",
+    "severity": "{{alert.severity}}",
+    "namespace": "{{alert.namespace}}",
+    "status": "{{alert.status}}",
+    "description": "{{alert.description}}",
+    "summary": "{{alert.summary}}",
+    "started_at": "{{alert.started_at}}",
+    "ended_at": "{{alert.ended_at}}",
+    "fingerprint": "{{alert.fingerprint}}"
+  }
+}`
+	}
 }

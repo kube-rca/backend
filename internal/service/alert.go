@@ -1,17 +1,15 @@
 // Alert 처리 비즈니스 로직 정의
-// handler에서 받은 알림을 필터링하고 client를 통해 Slack으로 전송
+// handler에서 받은 알림을 필터링하고 notifier로 전송
 //
 // 처리 흐름:
 //  1. 현재 firing 상태인 Incident가 있는지 확인
 //     - 없으면: 새 Incident 생성
 //  2. Alert를 DB에 저장 (alerts 테이블) + Incident 연결
 //  3. resolved 상태면 resolved_at 업데이트
-//  4. shouldSendToSlack으로 필터링
-//  5. resolved 알림: DB에서 thread_ts 조회하여 메모리에 복원
-//  6. SlackClient.SendAlert로 Slack 전송
-//  7. firing 알림: thread_ts를 DB에 저장
-//  8. Agent에 비동기 분석 요청 (firing, resolved)
-//  9. 전송 성공/실패 카운트 반환
+//  4. notifier 전송 대상인지 필터링
+//  5. notifier.Notify로 채널별 전송
+//  6. Agent에 비동기 분석 요청 (firing, resolved)
+//  7. 전송 성공/실패 카운트 반환
 
 package service
 
@@ -19,26 +17,27 @@ import (
 	"log"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/kube-rca/backend/internal/client"
 	"github.com/kube-rca/backend/internal/db"
 	"github.com/kube-rca/backend/internal/model"
 )
 
 // AlertService 구조체 정의
 type AlertService struct {
-	slackClient  *client.SlackClient
+	notifier     AlertNotifier
 	agentService *AgentService
 	db           *db.Postgres
-	deliverySvc  *WebhookDeliveryService
 }
 
 // AlertService 객체 생성
-func NewAlertService(slackClient *client.SlackClient, agentService *AgentService, database *db.Postgres, deliverySvc *WebhookDeliveryService) *AlertService {
+func NewAlertService(notifier AlertNotifier, agentService *AgentService, database *db.Postgres) *AlertService {
+	if notifier == nil {
+		notifier = NewCompositeAlertNotifier()
+	}
+
 	return &AlertService{
-		slackClient:  slackClient,
+		notifier:     notifier,
 		agentService: agentService,
 		db:           database,
-		deliverySvc:  deliverySvc,
 	}
 }
 
@@ -76,48 +75,25 @@ func (s *AlertService) ProcessWebhook(webhook model.AlertmanagerWebhook) (sent, 
 			}
 		}
 
-		// 4. 필터링: Slack으로 전송할 알림인지 확인
-		if !s.shouldSendToSlack(alert) {
+		// 4. 필터링: notifier로 전송할 알림인지 확인
+		if !s.shouldNotify(alert) {
 			continue
 		}
 
-		// 5. resolved 알림: DB에서 thread_ts 조회하여 메모리에 복원
-		// (백엔드 재시작 시 메모리가 초기화되므로 DB에서 복원 필요)
-		if alert.Status == "resolved" {
-			if threadTS, ok := s.db.GetAlertThreadTS(alert.Fingerprint); ok {
-				s.slackClient.StoreThreadTS(alert.Fingerprint, threadTS)
-			}
-		}
-
-		// 6. Client 레이어로 해당 알림을 전달
-		err = s.slackClient.SendAlert(alert, alert.Status, incidentID)
+		// 5. notifier로 채널별 전송
+		err = s.notifier.Notify(alert, incidentID)
 		if err != nil {
-			log.Printf("Failed to send alert to Slack: %v", err)
+			log.Printf("Failed to send alert via notifier: %v", err)
 			failed++
-			continue
+		} else {
+			log.Printf("Sent alert via notifier (alert_id=%s, status=%s, incident_id=%s)", alert.Fingerprint, alert.Status, incidentID)
+			sent++
 		}
 
-		log.Printf("Sent alert to Slack (alert_id=%s, status=%s, incident_id=%s)", alert.Fingerprint, alert.Status, incidentID)
-		sent++
-
-		// 7. thread_ts를 DB에 저장 (firing 알림일 때)
-		if alert.Status == "firing" {
-			if threadTS, ok := s.slackClient.GetThreadTS(alert.Fingerprint); ok {
-				if err := s.db.UpdateAlertThreadTS(alert.Fingerprint, threadTS); err != nil {
-					log.Printf("Failed to save thread_ts to DB: %v", err)
-				}
-			}
-		}
-
-		// 8. Agent에 비동기 실행 요청 (firing, resolved)
+		// 6. Agent에 비동기 실행 요청 (firing, resolved)
 		// DB에서 thread_ts 조회 (메모리 대신 DB 사용)
 		threadTS, _ := s.db.GetAlertThreadTS(alert.Fingerprint)
 		go s.agentService.RequestAnalysis(alert, threadTS, incidentID)
-
-		// 9. 사용자 설정 Webhook으로 비동기 전송 (기존 Slack과 시동)
-		if s.deliverySvc != nil {
-			go s.deliverySvc.Deliver(alert, incidentID)
-		}
 	}
 	return sent, failed
 }
@@ -169,8 +145,8 @@ func (s *AlertService) shouldProcess(alert model.Alert) bool {
 //   - 특정 alertname만 전송
 //
 // Returns:
-//   - bool: true면 Slack으로 전송, false면 무시
-func (s *AlertService) shouldSendToSlack(alert model.Alert) bool {
+//   - bool: true면 기본 알림 채널로 전송, false면 무시
+func (s *AlertService) shouldNotify(alert model.Alert) bool {
 	// warning, critical만 전송 (info, none 등 필터링)
 	severity := alert.Labels["severity"]
 	if severity == "warning" || severity == "critical" {

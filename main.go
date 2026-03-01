@@ -90,9 +90,12 @@ func main() {
 	// AgentService: Agent 요청 및 Slack 쓰레드 응답 처리 + DB 저장
 	agentService := service.NewAgentService(agentClient, slackClient, pgRepo)
 	chatService := service.NewChatService(pgRepo, agentClient)
-	// AlertService: 알림 필터링 및 Slack 전송 로직 담당 + DB 저장
+	// AlertService: 알림 필터링 및 notifier 전송 로직 담당 + DB 저장
 	webhookDeliverySvc := service.NewWebhookDeliveryService(pgRepo, pgRepo)
-	alertService := service.NewAlertService(slackClient, agentService, pgRepo, webhookDeliverySvc)
+	slackNotifier := service.NewSlackNotifier(slackClient, pgRepo)
+	webhookNotifier := service.NewWebhookListNotifier(webhookDeliverySvc)
+	alertNotifier := service.NewCompositeAlertNotifier(slackNotifier, webhookNotifier)
+	alertService := service.NewAlertService(alertNotifier, agentService, pgRepo)
 	// RcaService: Incident/Alert 조회 및 종료 처리 + Agent 최종 분석 요청 + 임베딩 생성
 	rcaSvc := service.NewRcaService(pgRepo, agentService, embeddingService)
 	chatHandler := handler.NewChatHandler(chatService)
