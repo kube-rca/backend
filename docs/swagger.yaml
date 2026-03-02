@@ -355,15 +355,13 @@ definitions:
     type: object
   model.WebhookConfig:
     properties:
-      body:
+      channel:
         type: string
-      headers:
-        items:
-          $ref: '#/definitions/model.WebhookHeader'
-        type: array
       id:
         type: integer
-      method:
+      token:
+        type: string
+      type:
         type: string
       updated_at:
         type: string
@@ -390,13 +388,11 @@ definitions:
     type: object
   model.WebhookConfigRequest:
     properties:
-      body:
+      channel:
         type: string
-      headers:
-        items:
-          $ref: '#/definitions/model.WebhookHeader'
-        type: array
-      method:
+      token:
+        type: string
+      type:
         type: string
       url:
         type: string
@@ -406,13 +402,6 @@ definitions:
       data:
         $ref: '#/definitions/model.WebhookConfig'
       status:
-        type: string
-    type: object
-  model.WebhookHeader:
-    properties:
-      key:
-        type: string
-      value:
         type: string
     type: object
 info:

@@ -1704,19 +1704,16 @@ const docTemplate = `{
         "model.WebhookConfig": {
             "type": "object",
             "properties": {
-                "body": {
+                "channel": {
                     "type": "string"
-                },
-                "headers": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/model.WebhookHeader"
-                    }
                 },
                 "id": {
                     "type": "integer"
                 },
-                "method": {
+                "token": {
+                    "type": "string"
+                },
+                "type": {
                     "type": "string"
                 },
                 "updated_at": {
@@ -1758,16 +1755,13 @@ const docTemplate = `{
         "model.WebhookConfigRequest": {
             "type": "object",
             "properties": {
-                "body": {
+                "channel": {
                     "type": "string"
                 },
-                "headers": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/model.WebhookHeader"
-                    }
+                "token": {
+                    "type": "string"
                 },
-                "method": {
+                "type": {
                     "type": "string"
                 },
                 "url": {
@@ -1782,17 +1776,6 @@ const docTemplate = `{
                     "$ref": "#/definitions/model.WebhookConfig"
                 },
                 "status": {
-                    "type": "string"
-                }
-            }
-        },
-        "model.WebhookHeader": {
-            "type": "object",
-            "properties": {
-                "key": {
-                    "type": "string"
-                },
-                "value": {
                     "type": "string"
                 }
             }
