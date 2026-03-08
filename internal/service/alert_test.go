@@ -225,7 +225,7 @@ func newTestAlertService(store *alertStoreMock, notifier *notifierMock, analyzer
 		notifier:     notifier,
 		agentService: analyzer,
 		db:           store,
-		flappingConfig: config.FlappingConfig{
+		envFlapping: config.FlappingConfig{
 			Enabled: false, // 기본: flapping 비활성
 		},
 		sseHub: nil, // SSE 비활성

@@ -54,25 +54,33 @@ type alertAnalyzer interface {
 
 // AlertService 구조체 정의
 type AlertService struct {
-	notifier       client.Notifier
-	agentService   alertAnalyzer
-	db             alertStore
-	flappingConfig config.FlappingConfig
-	sseHub         *sse.Hub
+	notifier     client.Notifier
+	agentService alertAnalyzer
+	db           alertStore
+	appSettings  *AppSettingsService
+	envFlapping  config.FlappingConfig
+	sseHub       *sse.Hub
 }
 
 // NewAlertService 객체 생성
-func NewAlertService(notifier client.Notifier, agentService *AgentService, database *db.Postgres, flappingConfig config.FlappingConfig, sseHub *sse.Hub) *AlertService {
+func NewAlertService(notifier client.Notifier, agentService *AgentService, database *db.Postgres, flappingConfig config.FlappingConfig, sseHub *sse.Hub, appSettings *AppSettingsService) *AlertService {
 	return &AlertService{
-		notifier:       notifier,
-		agentService:   agentService,
-		db:             database,
-		flappingConfig: flappingConfig,
-		sseHub:         sseHub,
+		notifier:     notifier,
+		agentService: agentService,
+		db:           database,
+		appSettings:  appSettings,
+		envFlapping:  flappingConfig,
+		sseHub:       sseHub,
 	}
 }
 
 func (s *AlertService) ProcessWebhook(webhook model.AlertmanagerWebhook) (sent, failed int) {
+	// 알림 파이프라인 비활성화 시 전체 스킵 (점검 모드)
+	if s.appSettings != nil && !s.appSettings.IsNotificationEnabled() {
+		log.Printf("Notification disabled, skipping %d alerts", len(webhook.Alerts))
+		return 0, 0
+	}
+
 	for _, alert := range webhook.Alerts {
 		// 0. severity 필터링 (info, none 등은 DB 저장도 하지 않음)
 		if !s.shouldProcess(alert) {
@@ -258,7 +266,7 @@ func (s *AlertService) shouldSendNotification(alert model.Alert) bool {
 // Returns: (isFlapping, isNewFlapping)
 func (s *AlertService) detectFlapping(alert model.Alert) (bool, bool) {
 	// Flapping 기능이 비활성화된 경우 스킵
-	if !s.flappingConfig.Enabled {
+	if !s.getFlappingEnabled() {
 		return false, false
 	}
 
@@ -372,17 +380,33 @@ func (s *AlertService) scheduleFlappingClearanceCheck(fingerprint string, resolv
 	}
 }
 
-// Configuration helper methods
+// Configuration helper methods - DB 동적 조회 + ENV fallback
+func (s *AlertService) getFlappingEnabled() bool {
+	if s.appSettings != nil {
+		return s.appSettings.GetEffectiveFlappingConfig().Enabled
+	}
+	return s.envFlapping.Enabled
+}
+
 func (s *AlertService) getFlappingWindowMinutes() int {
-	return s.flappingConfig.DetectionWindowMinutes
+	if s.appSettings != nil {
+		return s.appSettings.GetEffectiveFlappingConfig().DetectionWindowMinutes
+	}
+	return s.envFlapping.DetectionWindowMinutes
 }
 
 func (s *AlertService) getFlappingThreshold() int {
-	return s.flappingConfig.CycleThreshold
+	if s.appSettings != nil {
+		return s.appSettings.GetEffectiveFlappingConfig().CycleThreshold
+	}
+	return s.envFlapping.CycleThreshold
 }
 
 func (s *AlertService) getFlappingClearanceMinutes() int {
-	return s.flappingConfig.ClearanceWindowMinutes
+	if s.appSettings != nil {
+		return s.appSettings.GetEffectiveFlappingConfig().ClearanceWindowMinutes
+	}
+	return s.envFlapping.ClearanceWindowMinutes
 }
 
 func (s *AlertService) getFlappingCycleCount(fingerprint string) int {
