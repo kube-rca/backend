@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.5.0](https://github.com/kube-rca/backend/compare/0.4.0...0.5.0) (2026-03-15)
+
+
+### Features
+
+* add auto/manual analysis mode with severity-based control (KAN-172) ([48ecf14](https://github.com/kube-rca/backend/commit/48ecf14fdab1f6fa8a8d6b7cc2f228dd27935e41))
+* add firing/resolved analysis split to alert detail API ([4bcf251](https://github.com/kube-rca/backend/commit/4bcf251fa58b57d17210db9c58d2f22ac2ccd882))
+* add multi-provider OIDC support with auto-detection ([04ee09b](https://github.com/kube-rca/backend/commit/04ee09b776b4ea1534e48d3ba1f39a18222c2e77))
+* add notifier events and webhook-based routing ([e1aceba](https://github.com/kube-rca/backend/commit/e1aceba598a4398fd2bed710dd28bbbe2b412657))
+* add notifier events and webhook-based routing ([e1aceba](https://github.com/kube-rca/backend/commit/e1aceba598a4398fd2bed710dd28bbbe2b412657))
+* add notifier events and webhook-based routing ([c77a6f4](https://github.com/kube-rca/backend/commit/c77a6f4893cbc0060f1d929373066cc34577c448))
+* add settings option ([b6c9231](https://github.com/kube-rca/backend/commit/b6c92315f00df16f7ed5e6cca572d4314844e1ea))
+* add severity-channel mapping rule ([d8f8638](https://github.com/kube-rca/backend/commit/d8f863866c97c5982c3360547d9ca3e9e9214a20))
+* add SSE support for real-time event notifications (KAN-165) ([d26e895](https://github.com/kube-rca/backend/commit/d26e895380870a3f0fa17d681bcf02faba2486cd))
+* Alanlysis 기능 추가 (KAN-170) ([1d9f4a8](https://github.com/kube-rca/backend/commit/1d9f4a8e9723577156d3ef166abb42b833be17fe))
+* allow info severity payload ([ad77cf9](https://github.com/kube-rca/backend/commit/ad77cf925b56a1cddeb3bd8f031b9b727d156b3f))
+* **analyze:** add analysis SSE events and is_analyzing API field (KAN-173) ([b2ebbe4](https://github.com/kube-rca/backend/commit/b2ebbe437d95fdf59f2134586d8761b968d02ebc))
+* **analyze:** add in-flight dedup guard and configurable agent timeout ([f421628](https://github.com/kube-rca/backend/commit/f4216280d8043d800dd598ee72e5f794ced9fdd4))
+* **analyze:** differentiate resolved alert analysis from firing ([f5545f0](https://github.com/kube-rca/backend/commit/f5545f053cebc0d054860ea9d6e53f319ea3dab3))
+* **db:** add connection retry with exponential backoff and DB-aware health endpoints ([bc1c23a](https://github.com/kube-rca/backend/commit/bc1c23a26b6f424a8f9d6b89816bdb2ea5944a9b))
+* display OIDC login_id as 'Name (email)' format ([493873f](https://github.com/kube-rca/backend/commit/493873f85d6cefec8d669969320f9c5e417d8015))
+* **incidents:** expose is_analyzing field in incident detail API ([358c316](https://github.com/kube-rca/backend/commit/358c31680ce5b940208fcfd0f858b26b5904213e))
+* remove duplicated setting ([add8fa3](https://github.com/kube-rca/backend/commit/add8fa3f2bc906a689d4c951c83d030b64d51874))
+* sync UI/Helm setting ([a7dab54](https://github.com/kube-rca/backend/commit/a7dab54ed5393e69343c91d46d47133cb3ddb6d1))
+
+
+### Bug Fixes
+
+* add prompt=select_account to OIDC auth URL ([50ce8f3](https://github.com/kube-rca/backend/commit/50ce8f39ee2b589d7f6cda73f342791b024c79e6))
+* **alerts:** resolve fingerprint dedup causing alert history loss ([#25](https://github.com/kube-rca/backend/issues/25)) ([d1fc66e](https://github.com/kube-rca/backend/commit/d1fc66ec413e2cf528cd2bb5c5048feea1ac7c83))
+* analysis-channel mapping rule ([22af24a](https://github.com/kube-rca/backend/commit/22af24a25cf9fdcc2ad741a56144d629296e6d6e))
+* **analyze:** correct fingerprint lookup and add incident-level analysis ([7dbd88a](https://github.com/kube-rca/backend/commit/7dbd88a801d983b3f30c94d552c8a2e6cabd821f))
+* edit thread_ts analysis mapping rule ([f8b309f](https://github.com/kube-rca/backend/commit/f8b309f76293a7301a63cbabea580a96055f4737))
+* **incidents:** prevent duplicate ongoing incidents with atomic upsert ([09b391a](https://github.com/kube-rca/backend/commit/09b391a02948165b5b45f563344a2467d3dd3d36))
+* use email as login_id for OIDC users instead of oidc_{sub} ([2efb25b](https://github.com/kube-rca/backend/commit/2efb25bf82a8bbaed3ca49125e6d2128feb5e05a))
+
 ## [0.4.0](https://github.com/kube-rca/backend/compare/0.3.0...0.4.0) (2026-02-27)
 
 
